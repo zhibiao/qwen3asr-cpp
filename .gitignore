@@ -28,11 +28,7 @@ CMakeUserPresets.json
 
 # Local models and generated GGUF files
 *.gguf
-/models/**/*.safetensors
-/models/**/*.bin
-/models/**/*.pt
-/models/**/*.pth
-/models/**/.cache/
+/models/*
 
 # Generated golden fixtures
 /testdata/
