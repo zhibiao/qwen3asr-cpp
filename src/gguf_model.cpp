@@ -872,11 +872,7 @@ GgufModel load_qwen3_asr_gguf(
 namespace {
 
 constexpr std::int32_t kSplitFormatVersion = 2;
-constexpr int kEncoderWeightTensorCount = 301;
-constexpr int kLmTextTensorCount = 310;
 constexpr int kLmHeadTensorCount = 1;
-constexpr int kLmWeightTensorCount =
-    kLmTextTensorCount + kLmHeadTensorCount;
 
 struct SplitCommonInfo {
     std::int32_t format_version = 0;
@@ -940,9 +936,22 @@ void verify_split_part(
         );
     }
 
+    const int layer_count = read_i32(
+        context,
+        info.part == "encoder" ?
+            "qwen3_asr.audio.encoder_layers" :
+            "qwen3_asr.text.layers"
+    );
+    if (layer_count <= 0) {
+        throw Error(
+            ErrorCode::ModelLoadFailed,
+            "split GGUF layer count is invalid"
+        );
+    }
     const int expected_weight_count =
         info.part == "encoder" ?
-        kEncoderWeightTensorCount : kLmWeightTensorCount;
+        13 + 16 * layer_count :
+        3 + 11 * layer_count;
     if (info.weight_tensor_count != expected_weight_count) {
         throw Error(
             ErrorCode::ModelLoadFailed,
@@ -1060,54 +1069,100 @@ void verify_split_part(
     }
 
     if (info.part == "encoder") {
+        const int d_model = read_i32(
+            context,
+            "qwen3_asr.audio.d_model"
+        );
+        const int encoder_ffn_dim = read_i32(
+            context,
+            "qwen3_asr.audio.encoder_ffn_dim"
+        );
+        const int output_dim = read_i32(
+            context,
+            "qwen3_asr.audio.output_dim"
+        );
+        const int downsample_hidden_size = read_i32(
+            context,
+            "qwen3_asr.audio.downsample_hidden_size"
+        );
+        const std::string last_layer_fc2 =
+            "thinker.audio_tower.layers." +
+            std::to_string(layer_count - 1) +
+            ".fc2.weight";
         require_tensor(
             context,
             "thinker.audio_tower.conv2d1.weight",
             GGML_TYPE_COUNT,
-            {3, 3, 1, 480}
+            {3, 3, 1, downsample_hidden_size}
         );
         require_tensor(
             context,
             "thinker.audio_tower.conv_out.weight",
             GGML_TYPE_COUNT,
-            {7680, 896}
+            {16 * downsample_hidden_size, d_model}
         );
         require_tensor(
             context,
-            "thinker.audio_tower.layers.17.fc2.weight",
+            last_layer_fc2,
             GGML_TYPE_COUNT,
-            {3584, 896}
+            {encoder_ffn_dim, d_model}
         );
         require_tensor(
             context,
             "thinker.audio_tower.proj2.weight",
             GGML_TYPE_COUNT,
-            {896, 1024}
+            {d_model, output_dim}
         );
     } else {
+        const int hidden_size = read_i32(
+            context,
+            "qwen3_asr.text.hidden_size"
+        );
+        const int intermediate_size = read_i32(
+            context,
+            "qwen3_asr.text.intermediate_size"
+        );
+        const int vocab_size = read_i32(
+            context,
+            "qwen3_asr.text.vocab_size"
+        );
+        const int attention_size =
+            read_i32(
+                context,
+                "qwen3_asr.text.attention_heads"
+            ) *
+            read_i32(context, "qwen3_asr.text.head_dim");
+        const std::string last_layer_prefix =
+            "thinker.model.layers." +
+            std::to_string(layer_count - 1) +
+            ".";
+        const std::string last_layer_q_proj =
+            last_layer_prefix + "self_attn.q_proj.weight";
+        const std::string last_layer_down_proj =
+            last_layer_prefix + "mlp.down_proj.weight";
         require_tensor(
             context,
             "thinker.model.embed_tokens.weight",
             GGML_TYPE_COUNT,
-            {1024, 151936}
+            {hidden_size, vocab_size}
         );
         require_tensor(
             context,
-            "thinker.model.layers.27.self_attn.q_proj.weight",
+            last_layer_q_proj,
             GGML_TYPE_COUNT,
-            {1024, 2048}
+            {hidden_size, attention_size}
         );
         require_tensor(
             context,
-            "thinker.model.layers.27.mlp.down_proj.weight",
+            last_layer_down_proj,
             GGML_TYPE_COUNT,
-            {3072, 1024}
+            {intermediate_size, hidden_size}
         );
         require_tensor(
             context,
             "thinker.lm_head.weight",
             GGML_TYPE_COUNT,
-            {1024, 151936}
+            {hidden_size, vocab_size}
         );
     }
 }
@@ -1627,7 +1682,8 @@ GgufModelPair load_qwen3_asr_gguf_pair(
     pair.lm.weight_layout = lm_info.weight_layout;
     pair.lm.weight_dtype = lm_info.weight_dtype;
     pair.lm.weight_tensor_count = lm_info.weight_tensor_count;
-    pair.lm.text_weight_tensor_count = kLmTextTensorCount;
+    pair.lm.text_weight_tensor_count =
+        lm_info.weight_tensor_count - kLmHeadTensorCount;
     pair.lm.lm_head_weight_tensor_count = kLmHeadTensorCount;
     pair.lm.weight_byte_count = lm_info.weight_byte_count;
 

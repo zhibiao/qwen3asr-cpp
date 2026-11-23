@@ -175,6 +175,60 @@ if(EXISTS "${QWEN3ASR_ENCODER_Q8_GGUF}" AND
     )
 endif()
 
+set(
+    QWEN3ASR_ENCODER_17B_GGUF
+    "${PROJECT_SOURCE_DIR}/models/qwen3-asr-1.7b-encoder-bf16.gguf"
+)
+set(
+    QWEN3ASR_LM_17B_GGUF
+    "${PROJECT_SOURCE_DIR}/models/qwen3-asr-1.7b-lm-bf16.gguf"
+)
+if(EXISTS "${QWEN3ASR_ENCODER_17B_GGUF}" AND
+   EXISTS "${QWEN3ASR_LM_17B_GGUF}")
+    add_test(
+        NAME qwen3_asr.1_7b_inspect
+        COMMAND
+            qwen3-asr-inspect
+            --encoder
+            "${QWEN3ASR_ENCODER_17B_GGUF}"
+            --lm
+            "${QWEN3ASR_LM_17B_GGUF}"
+    )
+    set_tests_properties(
+        qwen3_asr.1_7b_inspect
+        PROPERTIES
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:qwen3-asr-inspect>"
+            TIMEOUT 30
+    )
+endif()
+
+set(
+    QWEN3ASR_ENCODER_17B_Q8_GGUF
+    "${PROJECT_SOURCE_DIR}/models/qwen3-asr-1.7b-encoder-q8_0.gguf"
+)
+set(
+    QWEN3ASR_LM_17B_Q8_GGUF
+    "${PROJECT_SOURCE_DIR}/models/qwen3-asr-1.7b-lm-q8_0.gguf"
+)
+if(EXISTS "${QWEN3ASR_ENCODER_17B_Q8_GGUF}" AND
+   EXISTS "${QWEN3ASR_LM_17B_Q8_GGUF}")
+    add_test(
+        NAME qwen3_asr.1_7b_q8_inspect
+        COMMAND
+            qwen3-asr-inspect
+            --encoder
+            "${QWEN3ASR_ENCODER_17B_Q8_GGUF}"
+            --lm
+            "${QWEN3ASR_LM_17B_Q8_GGUF}"
+    )
+    set_tests_properties(
+        qwen3_asr.1_7b_q8_inspect
+        PROPERTIES
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:qwen3-asr-inspect>"
+            TIMEOUT 30
+    )
+endif()
+
 add_executable(
     qwen3-asr-audio-probe
     qwen3_asr_audio_probe.cpp

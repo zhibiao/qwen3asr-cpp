@@ -1,7 +1,7 @@
 # Qwen3-ASR C++ / GGML
 
-从 Hugging Face 模型目录导出 Encoder 和 LM 两个 GGUF 文件，然后使用
-`qwen3-asr` 进行离线转录。
+从 Hugging Face 模型目录导出 Qwen3-ASR 0.6B 或 1.7B 的 Encoder 和 LM
+两个 GGUF 文件，然后使用 `qwen3-asr` 进行离线转录。
 
 ## 模型转换
 
@@ -12,7 +12,11 @@
 
 .\.venv\Scripts\python.exe .\convert_hf_to_gguf.py `
   --model .\models\Qwen3-ASR-0.6B `
-  --output .\models\qwen3-asr-0.6b.gguf
+  --output .\models
+
+.\.venv\Scripts\python.exe .\convert_hf_to_gguf.py `
+  --model .\models\Qwen3-ASR-1.7B `
+  --output .\models
 ```
 
 默认生成 BF16 文件：
@@ -20,6 +24,8 @@
 ```text
 models/qwen3-asr-0.6b-encoder-bf16.gguf
 models/qwen3-asr-0.6b-lm-bf16.gguf
+models/qwen3-asr-1.7b-encoder-bf16.gguf
+models/qwen3-asr-1.7b-lm-bf16.gguf
 ```
 
 ### Linux
@@ -31,7 +37,11 @@ python -m pip install -r requirements.txt
 
 python convert_hf_to_gguf.py \
   --model ./models/Qwen3-ASR-0.6B \
-  --output ./models/qwen3-asr-0.6b.gguf
+  --output ./models
+
+python convert_hf_to_gguf.py \
+  --model ./models/Qwen3-ASR-1.7B \
+  --output ./models
 ```
 
 指定其他权重类型：
@@ -54,24 +64,32 @@ python convert_hf_to_gguf.py \
 
 ```powershell
 .\.venv\Scripts\python.exe .\quantize_gguf.py `
-  --model encoder `
   --input .\models\qwen3-asr-0.6b-encoder-f16.gguf
 
 .\.venv\Scripts\python.exe .\quantize_gguf.py `
-  --model lm `
   --input .\models\qwen3-asr-0.6b-lm-f16.gguf
+
+.\.venv\Scripts\python.exe .\quantize_gguf.py `
+  --input .\models\qwen3-asr-1.7b-encoder-bf16.gguf
+
+.\.venv\Scripts\python.exe .\quantize_gguf.py `
+  --input .\models\qwen3-asr-1.7b-lm-bf16.gguf
 ```
 
 Linux：
 
 ```bash
 python quantize_gguf.py \
-  --model encoder \
   --input ./models/qwen3-asr-0.6b-encoder-f16.gguf
 
 python quantize_gguf.py \
-  --model lm \
   --input ./models/qwen3-asr-0.6b-lm-f16.gguf
+
+python quantize_gguf.py \
+  --input ./models/qwen3-asr-1.7b-encoder-bf16.gguf
+
+python quantize_gguf.py \
+  --input ./models/qwen3-asr-1.7b-lm-bf16.gguf
 ```
 
 默认输出为：
@@ -79,6 +97,8 @@ python quantize_gguf.py \
 ```text
 models/qwen3-asr-0.6b-encoder-q8_0.gguf
 models/qwen3-asr-0.6b-lm-q8_0.gguf
+models/qwen3-asr-1.7b-encoder-q8_0.gguf
+models/qwen3-asr-1.7b-lm-q8_0.gguf
 ```
 
 只支持 Q8_0。矩阵权重量化为 Q8_0，norm、bias、卷积核和 Mel filter 保持原类型。
@@ -95,6 +115,11 @@ cmake --build --preset windows-cpu
   --encoder .\models\qwen3-asr-0.6b-encoder-bf16.gguf `
   --lm .\models\qwen3-asr-0.6b-lm-bf16.gguf `
   --audio .\test_wavs\raokouling.wav
+
+.\build\windows-cpu\bin\Release\qwen3-asr.exe `
+  --encoder .\models\qwen3-asr-1.7b-encoder-bf16.gguf `
+  --lm .\models\qwen3-asr-1.7b-lm-bf16.gguf `
+  --audio .\test_wavs\raokouling.wav
 ```
 
 Windows CUDA（需要设置 `CUDA_PATH`）：
@@ -106,6 +131,12 @@ cmake --build --preset windows-cuda
 .\build\windows-cuda\bin\Release\qwen3-asr.exe `
   --encoder .\models\qwen3-asr-0.6b-encoder-bf16.gguf `
   --lm .\models\qwen3-asr-0.6b-lm-bf16.gguf `
+  --audio .\test_wavs\raokouling.wav `
+  --device cuda
+
+.\build\windows-cuda\bin\Release\qwen3-asr.exe `
+  --encoder .\models\qwen3-asr-1.7b-encoder-q8_0.gguf `
+  --lm .\models\qwen3-asr-1.7b-lm-q8_0.gguf `
   --audio .\test_wavs\raokouling.wav `
   --device cuda
 ```
@@ -120,6 +151,11 @@ cmake --build --preset linux-cpu
   --encoder ./models/qwen3-asr-0.6b-encoder-bf16.gguf \
   --lm ./models/qwen3-asr-0.6b-lm-bf16.gguf \
   --audio ./test_wavs/raokouling.wav
+
+./build/linux-cpu/bin/qwen3-asr \
+  --encoder ./models/qwen3-asr-1.7b-encoder-bf16.gguf \
+  --lm ./models/qwen3-asr-1.7b-lm-bf16.gguf \
+  --audio ./test_wavs/raokouling.wav
 ```
 
 Linux CUDA：
@@ -131,6 +167,12 @@ cmake --build --preset linux-cuda
 ./build/linux-cuda/bin/qwen3-asr \
   --encoder ./models/qwen3-asr-0.6b-encoder-bf16.gguf \
   --lm ./models/qwen3-asr-0.6b-lm-bf16.gguf \
+  --audio ./test_wavs/raokouling.wav \
+  --device cuda
+
+./build/linux-cuda/bin/qwen3-asr \
+  --encoder ./models/qwen3-asr-1.7b-encoder-q8_0.gguf \
+  --lm ./models/qwen3-asr-1.7b-lm-q8_0.gguf \
   --audio ./test_wavs/raokouling.wav \
   --device cuda
 ```

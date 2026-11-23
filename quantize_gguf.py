@@ -28,16 +28,10 @@ def parse_args() -> argparse.Namespace:
         description="Quantize a Qwen3-ASR split GGUF file to Q8_0."
     )
     parser.add_argument(
-        "--model",
-        required=True,
-        choices=("encoder", "lm"),
-        help="GGUF component to quantize",
-    )
-    parser.add_argument(
         "--input",
         required=True,
         type=Path,
-        help="Input F16/F32 split GGUF file",
+        help="Input BF16/F16/F32 split GGUF file",
     )
     parser.add_argument(
         "--output",
@@ -54,8 +48,10 @@ def parse_args() -> argparse.Namespace:
 
 def default_output_path(input_path: Path) -> Path:
     stem = input_path.stem
-    if stem.endswith("-f16") or stem.endswith("-f32"):
-        stem = stem[:-4]
+    for suffix in ("-bf16", "-f16", "-f32"):
+        if stem.endswith(suffix):
+            stem = stem[:-len(suffix)]
+            break
     return input_path.with_name(f"{stem}-q8_0.gguf")
 
 
@@ -77,16 +73,21 @@ def copy_metadata(
         writer.add_key_value(name, value, value_type, sub_type)
 
 
-def tensor_data(tensor: gguf.ReaderTensor) -> np.ndarray:
-    if tensor.tensor_type not in (
+def decode_tensor_data(tensor: gguf.ReaderTensor) -> np.ndarray:
+    data = np.ascontiguousarray(tensor.data)
+    if tensor.tensor_type == gguf.GGMLQuantizationType.BF16:
+        bits = data.view(np.uint16).astype(np.uint32)
+        bits <<= 16
+        return bits.view(np.float32)
+    if tensor.tensor_type in (
         gguf.GGMLQuantizationType.F16,
         gguf.GGMLQuantizationType.F32,
     ):
-        raise ValueError(
-            f"unsupported source dtype for {tensor.name}: "
-            f"{tensor.tensor_type.name}"
-        )
-    return np.ascontiguousarray(tensor.data)
+        return data
+    raise ValueError(
+        f"unsupported source dtype for {tensor.name}: "
+        f"{tensor.tensor_type.name}"
+    )
 
 
 def should_quantize(tensor: gguf.ReaderTensor, data: np.ndarray) -> bool:
@@ -98,7 +99,6 @@ def should_quantize(tensor: gguf.ReaderTensor, data: np.ndarray) -> bool:
 
 
 def quantize(
-    model_part: str,
     input_path: Path,
     output_path: Path,
     overwrite: bool,
@@ -116,10 +116,10 @@ def quantize(
     part_field = reader.fields.get("qwen3_asr.part")
     if part_field is None:
         raise ValueError("input GGUF has no qwen3_asr.part metadata")
-    actual_part = str(part_field.contents())
-    if actual_part != model_part:
+    model_part = str(part_field.contents())
+    if model_part not in ("encoder", "lm"):
         raise ValueError(
-            f"--model={model_part} does not match input part={actual_part}"
+            f"unsupported input GGUF part: {model_part}"
         )
 
     architecture_field = reader.fields.get("general.architecture")
@@ -143,25 +143,26 @@ def quantize(
     quantized_count = 0
     try:
         for tensor in reader.tensors:
+            source_payload = np.ascontiguousarray(tensor.data)
             if tensor.name == "preprocessor.mel_filters":
                 writer.add_tensor(
                     tensor.name,
-                    tensor_data(tensor),
-                    raw_shape=tensor.data.shape,
+                    source_payload,
+                    raw_shape=source_payload.shape,
                     raw_dtype=tensor.tensor_type,
                 )
                 continue
 
-            data = tensor_data(tensor)
+            data = decode_tensor_data(tensor)
             if should_quantize(tensor, data):
                 payload = gguf.Q8_0.quantize(data)
                 payload_type = QUANT_TYPE
                 payload_shape = payload.shape
                 quantized_count += 1
             else:
-                payload = data
+                payload = source_payload
                 payload_type = tensor.tensor_type
-                payload_shape = data.shape
+                payload_shape = source_payload.shape
 
             writer.add_tensor(
                 tensor.name,
@@ -211,7 +212,7 @@ def quantize(
 def main() -> None:
     args = parse_args()
     output = args.output or default_output_path(args.input)
-    quantize(args.model, args.input, output, args.overwrite)
+    quantize(args.input, output, args.overwrite)
 
 
 if __name__ == "__main__":

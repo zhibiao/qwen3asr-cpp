@@ -621,7 +621,7 @@ def write_weight_metadata(
     )
     writer.add_int32(
         "qwen3_asr.weights.text_tensor_count",
-        310 if part == "lm" else 0,
+        int(stats["count"]) - 1 if part == "lm" else 0,
     )
     writer.add_int32(
         "qwen3_asr.weights.lm_head_tensor_count",
@@ -697,7 +697,7 @@ def export_part(
 
 def convert(
     model_dir: Path,
-    output_path: Path,
+    output_dir: Path,
     dtype: str = DEFAULT_DTYPE,
     num_ctx: int = DEFAULT_NUM_CTX,
 ) -> tuple[Path, Path]:
@@ -735,18 +735,20 @@ def convert(
             f"expected {expected_shape}"
         )
 
-    prefix = (
-        output_path.with_suffix("")
-        if output_path.suffix.lower() == ".gguf"
-        else output_path
-    )
-    if output_path.resolve().is_relative_to(model_dir.resolve()):
+    if output_dir.suffix.lower() == ".gguf":
+        raise ValueError("--output must be a directory, not a GGUF file")
+    if output_dir.resolve().is_relative_to(model_dir.resolve()):
         raise ValueError(
             "GGUF output must be outside the PyTorch model directory"
         )
-    encoder_path = prefix.parent / f"{prefix.name}-encoder-{dtype}.gguf"
-    lm_path = prefix.parent / f"{prefix.name}-lm-{dtype}.gguf"
-    encoder_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists() and not output_dir.is_dir():
+        raise NotADirectoryError(
+            f"output path is not a directory: {output_dir}"
+        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    prefix = model_dir.name.lower()
+    encoder_path = output_dir / f"{prefix}-encoder-{dtype}.gguf"
+    lm_path = output_dir / f"{prefix}-lm-{dtype}.gguf"
 
     encoder_stats = export_part(
         encoder_path,
@@ -799,7 +801,7 @@ def main() -> None:
         "--output",
         required=True,
         type=Path,
-        help="Output prefix or .gguf path; component suffix is added",
+        help="Output directory for the generated component GGUF files",
     )
     parser.add_argument(
         "--dtype",
