@@ -1,0 +1,16 @@
+# Python 3.12 conversion environment.
+# The PyTorch index is required for the CPU-only +cpu wheel.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch==2.14.1+cpu
+torchaudio==2.11.0+cpu
+transformers==5.23.0
+safetensors==0.8.0
+numpy==2.5.4
+gguf==0.19.0
+soundfile==0.14.0
+pydub==0.25.1
+librosa==1.0.1
+
+# Model download / verification only.
+modelscope>=1.20

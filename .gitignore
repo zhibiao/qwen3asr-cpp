@@ -1,0 +1,80 @@
+# CMake and build outputs
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CMakeUserPresets.json
+*.ninja
+.ninja_*
+
+# C/C++ build products
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+*.idb
+
+# Local models and generated GGUF files
+*.gguf
+/models/**/*.safetensors
+/models/**/*.bin
+/models/**/*.pt
+/models/**/*.pth
+/models/**/.cache/
+
+# Generated golden fixtures
+/testdata/
+
+# Python conversion environment and caches
+/.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+wheelhouse/
+
+# IDE and editor state
+.vs/
+.vscode/
+.idea/
+.cache/
+.clangd/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local logs and dumps
+/*.log
+/*.dump
+
+docs/Qwen3-ASR
+docs/whisper.cpp-1.9.5
+
+vendor/ggml-0.29.0
+vendor/miniaudio-0.11.26
+vendor/nlohmann
+vendor/uni-algo-1.2.0
