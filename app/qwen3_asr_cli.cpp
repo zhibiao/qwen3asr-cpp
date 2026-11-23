@@ -4,7 +4,9 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #if defined(_WIN32)
 #define NOMINMAX
@@ -12,6 +14,7 @@
 #endif
 
 #include "errors.h"
+#include "ggml-backend.h"
 #include "qwen3_asr.h"
 
 namespace {
@@ -45,20 +48,61 @@ void print_usage() {
            "[--temperature <value>]\n"
         << "            [--top-k <count>] [--top-p <value>] "
            "[--seed <value>]\n"
+        << "  qwen3-asr --list-devices\n"
         << "  qwen3-asr --help\n\n"
         << "Without --audio, the command only loads and inspects the model.\n";
 }
 
+const char * device_type_name(enum ggml_backend_dev_type type) {
+    switch (type) {
+        case GGML_BACKEND_DEVICE_TYPE_CPU:
+            return "CPU";
+        case GGML_BACKEND_DEVICE_TYPE_GPU:
+            return "GPU";
+        case GGML_BACKEND_DEVICE_TYPE_IGPU:
+            return "IGPU";
+        case GGML_BACKEND_DEVICE_TYPE_ACCEL:
+            return "ACCEL";
+        case GGML_BACKEND_DEVICE_TYPE_META:
+            return "META";
+    }
+    return "UNKNOWN";
+}
+
+void list_devices() {
+    ggml_backend_load_all();
+    const std::size_t count = ggml_backend_dev_count();
+    std::cout << "devices\t" << count << '\n';
+    for (std::size_t index = 0; index < count; ++index) {
+        ggml_backend_dev_t device = ggml_backend_dev_get(index);
+        if (device == nullptr) {
+            continue;
+        }
+        ggml_backend_dev_props props{};
+        ggml_backend_dev_get_props(device, &props);
+        std::cout << "device\t" << index
+                  << "\tname=" << (props.name != nullptr ? props.name : "")
+                  << "\ttype=" << device_type_name(props.type)
+                  << "\tdescription="
+                  << (props.description != nullptr ? props.description : "")
+                  << "\tfree_bytes=" << props.memory_free
+                  << "\ttotal_bytes=" << props.memory_total;
+        if (props.device_id != nullptr) {
+            std::cout << "\tdevice_id=" << props.device_id;
+        }
+        std::cout << '\n';
+    }
+}
+
 std::string require_value(
-    int argc,
-    char ** argv,
-    int & index,
+    const std::vector<std::string> & arguments,
+    std::size_t & index,
     const std::string & argument
 ) {
-    if (index + 1 >= argc) {
+    if (index + 1 >= arguments.size()) {
         throw std::runtime_error("missing value for " + argument);
     }
-    return argv[++index];
+    return arguments[++index];
 }
 
 int parse_int(const std::string & value, const std::string & argument) {
@@ -117,54 +161,60 @@ std::string parse_device(const std::string & value) {
     return value;
 }
 
-CliOptions parse_arguments(int argc, char ** argv) {
+CliOptions parse_arguments(const std::vector<std::string> & arguments) {
     CliOptions options;
-    for (int index = 1; index < argc; ++index) {
-        const std::string argument = argv[index];
+    for (std::size_t index = 1; index < arguments.size(); ++index) {
+        const std::string & argument = arguments[index];
         if (argument == "--encoder") {
-            options.encoder = require_value(argc, argv, index, argument);
+            options.encoder = std::filesystem::u8path(
+                require_value(arguments, index, argument)
+            );
         } else if (argument == "--lm") {
-            options.lm = require_value(argc, argv, index, argument);
+            options.lm = std::filesystem::u8path(
+                require_value(arguments, index, argument)
+            );
         } else if (argument == "--audio") {
-            options.audio = require_value(argc, argv, index, argument);
+            options.audio = std::filesystem::u8path(
+                require_value(arguments, index, argument)
+            );
         } else if (argument == "--num-ctx") {
             options.num_ctx = parse_int(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else if (argument == "--device") {
             options.device = parse_device(
-                require_value(argc, argv, index, argument)
+                require_value(arguments, index, argument)
             );
         } else if (argument == "--context") {
             options.generate.context =
-                require_value(argc, argv, index, argument);
+                require_value(arguments, index, argument);
         } else if (argument == "--language") {
             options.generate.language =
-                require_value(argc, argv, index, argument);
+                require_value(arguments, index, argument);
         } else if (argument == "--max-new-tokens") {
             options.generate.generation.max_new_tokens = parse_int(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else if (argument == "--temperature") {
             options.generate.generation.temperature = parse_float(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else if (argument == "--top-k") {
             options.generate.generation.top_k = parse_int(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else if (argument == "--top-p") {
             options.generate.generation.top_p = parse_float(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else if (argument == "--seed") {
             options.generate.generation.seed = parse_u64(
-                require_value(argc, argv, index, argument),
+                require_value(arguments, index, argument),
                 argument
             );
         } else {
@@ -229,17 +279,20 @@ void print_result(
 
 }  // namespace
 
-int main(int argc, char ** argv) {
+int run(const std::vector<std::string> & arguments) {
     initialize_console_encoding();
-    if (argc == 2 &&
-        (std::string(argv[1]) == "--help" ||
-         std::string(argv[1]) == "-h")) {
+    if (arguments.size() == 2 && arguments[1] == "--list-devices") {
+        list_devices();
+        return 0;
+    }
+    if (arguments.size() == 2 &&
+        (arguments[1] == "--help" || arguments[1] == "-h")) {
         print_usage();
         return 0;
     }
 
     try {
-        const CliOptions options = parse_arguments(argc, argv);
+        const CliOptions options = parse_arguments(arguments);
         qwen3_asr::Qwen3AsrConfig config;
         config.encoder_gguf = options.encoder;
         config.lm_gguf = options.lm;
@@ -265,3 +318,76 @@ int main(int argc, char ** argv) {
         return 2;
     }
 }
+
+#if defined(_WIN32)
+
+namespace {
+
+std::string utf8_from_wide(const wchar_t * value) {
+    if (value == nullptr) {
+        return {};
+    }
+    const int length = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value,
+        -1,
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (length <= 0) {
+        throw std::runtime_error(
+            "failed to convert command-line argument to UTF-8"
+        );
+    }
+    std::string result(static_cast<std::size_t>(length), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8,
+            WC_ERR_INVALID_CHARS,
+            value,
+            -1,
+            result.data(),
+            length,
+            nullptr,
+            nullptr
+        ) <= 0) {
+        throw std::runtime_error(
+            "failed to convert command-line argument to UTF-8"
+        );
+    }
+    result.resize(static_cast<std::size_t>(length - 1));
+    return result;
+}
+
+}  // namespace
+
+int wmain(int argc, wchar_t ** argv) {
+    try {
+        std::vector<std::string> arguments;
+        arguments.reserve(static_cast<std::size_t>(argc));
+        for (int index = 0; index < argc; ++index) {
+            arguments.push_back(utf8_from_wide(argv[index]));
+        }
+        return run(arguments);
+    } catch (const std::exception & error) {
+        std::cerr << "qwen3-asr argument error: " << error.what() << '\n';
+        return 2;
+    }
+}
+
+#else
+
+int main(int argc, char ** argv) {
+    try {
+        return run(
+            std::vector<std::string>(argv, argv + argc)
+        );
+    } catch (const std::exception & error) {
+        std::cerr << "qwen3-asr argument error: " << error.what() << '\n';
+        return 2;
+    }
+}
+
+#endif

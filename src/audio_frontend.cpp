@@ -26,26 +26,6 @@ std::string miniaudio_error(ma_result result) {
     return description != nullptr ? description : "unknown miniaudio error";
 }
 
-class DecoderGuard {
-public:
-    explicit DecoderGuard(ma_decoder * decoder)
-        : decoder_(decoder) {}
-
-    ~DecoderGuard() {
-        if (initialized_) {
-            ma_decoder_uninit(decoder_);
-        }
-    }
-
-    void mark_initialized() noexcept {
-        initialized_ = true;
-    }
-
-private:
-    ma_decoder * decoder_;
-    bool initialized_ = false;
-};
-
 void validate_finite_samples(
     const std::vector<float> & samples,
     const char * context
@@ -245,78 +225,83 @@ AudioBuffer AudioLoader::load(const std::filesystem::path & path) {
                 miniaudio_error(result)
         );
     }
-    DecoderGuard decoder_guard(&decoder);
-    decoder_guard.mark_initialized();
+    try {
+        ma_format format = ma_format_unknown;
+        ma_uint32 channels = 0;
+        ma_uint32 sample_rate = 0;
+        std::array<ma_channel, MA_MAX_CHANNELS> channel_map{};
 
-    ma_format format = ma_format_unknown;
-    ma_uint32 channels = 0;
-    ma_uint32 sample_rate = 0;
-    std::array<ma_channel, MA_MAX_CHANNELS> channel_map{};
-
-    result = ma_decoder_get_data_format(
-        &decoder,
-        &format,
-        &channels,
-        &sample_rate,
-        channel_map.data(),
-        channel_map.size()
-    );
-    if (result != MA_SUCCESS) {
-        throw Error(
-            ErrorCode::AudioLoadFailed,
-            "failed to query decoded audio format: " +
-                miniaudio_error(result)
-        );
-    }
-
-    if (format != ma_format_f32 || channels == 0 || sample_rate == 0) {
-        throw Error(
-            ErrorCode::UnsupportedAudioFormat,
-            "decoder did not produce mono/stereo float32 PCM"
-        );
-    }
-
-    constexpr ma_uint64 kFramesPerRead = 4096;
-    std::vector<float> read_buffer(
-        static_cast<std::size_t>(kFramesPerRead) * channels
-    );
-    AudioBuffer audio;
-    audio.sample_rate = static_cast<std::uint32_t>(sample_rate);
-    audio.channels = static_cast<std::uint32_t>(channels);
-
-    while (true) {
-        ma_uint64 frames_read = 0;
-        result = ma_decoder_read_pcm_frames(
+        result = ma_decoder_get_data_format(
             &decoder,
-            read_buffer.data(),
-            kFramesPerRead,
-            &frames_read
+            &format,
+            &channels,
+            &sample_rate,
+            channel_map.data(),
+            channel_map.size()
         );
-
-        if (result == MA_AT_END) {
-            break;
-        }
         if (result != MA_SUCCESS) {
             throw Error(
                 ErrorCode::AudioLoadFailed,
-                "failed while decoding audio: " + miniaudio_error(result)
+                "failed to query decoded audio format: " +
+                    miniaudio_error(result)
             );
         }
-        if (frames_read == 0) {
-            break;
+
+        if (format != ma_format_f32 || channels == 0 || sample_rate == 0) {
+            throw Error(
+                ErrorCode::UnsupportedAudioFormat,
+                "decoder did not produce mono/stereo float32 PCM"
+            );
         }
 
-        const std::size_t sample_count =
-            static_cast<std::size_t>(frames_read) * channels;
-        audio.samples.insert(
-            audio.samples.end(),
-            read_buffer.begin(),
-            read_buffer.begin() + static_cast<std::ptrdiff_t>(sample_count)
+        constexpr ma_uint64 kFramesPerRead = 4096;
+        std::vector<float> read_buffer(
+            static_cast<std::size_t>(kFramesPerRead) * channels
         );
-    }
+        AudioBuffer audio;
+        audio.sample_rate = static_cast<std::uint32_t>(sample_rate);
+        audio.channels = static_cast<std::uint32_t>(channels);
 
-    validate_finite_samples(audio.samples, "decoded audio");
-    return audio;
+        while (true) {
+            ma_uint64 frames_read = 0;
+            result = ma_decoder_read_pcm_frames(
+                &decoder,
+                read_buffer.data(),
+                kFramesPerRead,
+                &frames_read
+            );
+
+            if (result == MA_AT_END) {
+                break;
+            }
+            if (result != MA_SUCCESS) {
+                throw Error(
+                    ErrorCode::AudioLoadFailed,
+                    "failed while decoding audio: " +
+                        miniaudio_error(result)
+                );
+            }
+            if (frames_read == 0) {
+                break;
+            }
+
+            const std::size_t sample_count =
+                static_cast<std::size_t>(frames_read) * channels;
+            audio.samples.insert(
+                audio.samples.end(),
+                read_buffer.begin(),
+                read_buffer.begin() +
+                    static_cast<std::ptrdiff_t>(sample_count)
+            );
+        }
+
+        validate_finite_samples(audio.samples, "decoded audio");
+        ma_decoder_uninit(&decoder);
+        return audio;
+    } catch (...) {
+        ma_decoder_uninit(&decoder);
+        throw;
+    }
 }
 
 MonoAudio AudioProcessor::downmix_to_mono(const AudioBuffer & audio) {

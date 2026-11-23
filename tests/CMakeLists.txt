@@ -49,6 +49,14 @@ set_tests_properties(
         TIMEOUT 30
 )
 
+add_test(NAME qwen3_asr.cli_list_devices COMMAND qwen3-asr --list-devices)
+set_tests_properties(
+    qwen3_asr.cli_list_devices
+    PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:qwen3-asr>"
+        TIMEOUT 30
+)
+
 find_package(Python3 COMPONENTS Interpreter QUIET)
 set(QWEN3ASR_QUANTIZE_PYTHON "")
 if(WIN32 AND EXISTS "${PROJECT_SOURCE_DIR}/.venv/Scripts/python.exe")
